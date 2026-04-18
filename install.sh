@@ -7,6 +7,7 @@
 
 REPO="https://raw.githubusercontent.com/Sven2410/Ultimate-Alarm-Card/main"
 SOUNDS="/config/www/community/Ultimate-Alarm-Card/sounds/wekker-standaard"
+REPO_SOUNDS="$REPO/wekker-standaard"
 SCRIPTS="/config/alarm_scripts"
 
 echo "═══════════════════════════════════════════"
@@ -29,7 +30,7 @@ SOUNDS_LIST=(
 )
 
 for sound in "${SOUNDS_LIST[@]}"; do
-  wget -q -O "$SOUNDS/${sound}.mp3" "$REPO/sounds/wekker-standaard/${sound}.mp3"
+  wget -q --timeout=60 --tries=3 -O "$SOUNDS/${sound}.mp3" "$REPO_SOUNDS/${sound}.mp3"
   if [ $? -eq 0 ]; then
     echo "  ✓ ${sound}.mp3"
   else
