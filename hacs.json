@@ -3,7 +3,9 @@
   "version": "1.1.0",
   "hacs": "1.6.0",
   "homeassistant": "2024.1.0",
+  "documentations": "https://github.com/Sven2410/Ultimate-Alarm-Card/blob/main/README.md",
+  "issues": "https://github.com/Sven2410/Ultimate-Alarm-Card/issues",
   "filename": "dist/alarm-card.js",
   "zip_release": true,
-  "release_tag": "v1.1.0"
+  "release_tag": "v1.0.0"
 }
