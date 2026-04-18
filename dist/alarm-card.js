@@ -26,7 +26,7 @@
  * Light label filter   : "verlichting_wekker"
  */
 
-const VERSION   = '1.2.0';
+const VERSION   = '1.2.1';
 const DAYS_SHORT= ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DAYS_NL   = ['Ma','Di','Wo','Do','Vr','Za','Zo'];
 const DAYS_FULL = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'];
@@ -37,7 +37,7 @@ const MP3_FILES = [
   'Milky_way','Quad','Radial','Reflection','Scavenger','Seedling',
   'Shelter','Sprinkles','Steps','Storytime','Tease','Unfold'
 ];
-const MP3_FOLDER = '/local/community/Ultimate-Alarm-Card/sounds/wekker-standaard/';
+const MP3_FOLDER = '/local/wekker-standaard/';
 const LABEL_SPEAKER = 'music_assistant';
 const LABEL_LIGHT   = 'verlichting_wekker';
 
