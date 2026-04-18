@@ -26,7 +26,7 @@
  * Light label filter   : "verlichting_wekker"
  */
 
-const VERSION   = '1.2.1';
+const VERSION   = '1.2.2';
 const DAYS_SHORT= ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DAYS_NL   = ['Ma','Di','Wo','Do','Vr','Za','Zo'];
 const DAYS_FULL = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'];
@@ -278,7 +278,8 @@ class AlarmCard extends HTMLElement {
     // Lamp: toon naam van eerste dag die lamp aan heeft
     const lampDay=days.find(d=>typeof alarm.d[String(d)]?.b==='number'&&alarm.d[String(d)]?.l);
     const lamp=lampDay!==undefined?alarm.d[String(lampDay)]?.l:null;
-    return{time:timeStr,days:dayStr,sound,lamp};
+    const speaker=firstDay?.mp||null;
+    return{time:timeStr,days:dayStr,sound,lamp,speaker};
   }
 
   // ── Render ─────────────────────────────────────────────
@@ -318,6 +319,8 @@ class AlarmCard extends HTMLElement {
         .alarm-sound ha-icon{--mdc-icon-size:12px}
         .alarm-lamp{font-size:11px;color:var(--secondary-text-color);margin-top:1px;display:flex;align-items:center;gap:3px}
         .alarm-lamp ha-icon{--mdc-icon-size:12px}
+        .alarm-speaker{font-size:11px;color:var(--secondary-text-color);margin-top:1px;display:flex;align-items:center;gap:3px}
+        .alarm-speaker ha-icon{--mdc-icon-size:12px}
         .alarm-actions{display:flex;align-items:center;gap:4px;flex-shrink:0}
         .toggle{display:flex;align-items:center;cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;padding:4px}
         .track{width:44px;height:26px;border-radius:13px;position:relative;box-sizing:border-box;transition:all .2s}
@@ -373,7 +376,7 @@ class AlarmCard extends HTMLElement {
     }
 
     listEl.innerHTML=alarms.map(alarm=>{
-      const {time,days,sound,lamp}=this._alarmSummary(alarm);
+      const {time,days,sound,lamp,speaker}=this._alarmSummary(alarm);
       const en=alarm.on;
       return `
         <div class="alarm-row" data-id="${alarm.id}">
@@ -383,6 +386,7 @@ class AlarmCard extends HTMLElement {
             <div class="alarm-days">${days||'Geen dagen geselecteerd'}</div>
             ${sound?`<div class="alarm-sound"><ha-icon icon="mdi:music"></ha-icon>${sound}</div>`:''}
             ${lamp?`<div class="alarm-lamp"><ha-icon icon="mdi:lightbulb-on"></ha-icon>${this._hass?.states[lamp]?.attributes?.friendly_name||lamp}</div>`:''}
+            ${speaker?`<div class="alarm-speaker"><ha-icon icon="mdi:speaker"></ha-icon>${this._hass?.states[speaker]?.attributes?.friendly_name||speaker}</div>`:''}
           </div>
           <div class="alarm-actions">
             <div class="toggle" data-toggle="${alarm.id}">
