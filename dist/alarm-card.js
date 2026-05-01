@@ -26,18 +26,12 @@
  * Light label filter   : "verlichting_wekker"
  */
 
-const VERSION   = '1.2.2';
+const VERSION   = '1.3.0';
 const DAYS_SHORT= ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DAYS_NL   = ['Ma','Di','Wo','Do','Vr','Za','Zo'];
 const DAYS_FULL = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'];
 const MAX_ALARMS = 10;
-const MP3_FILES = [
-  'Arpeggio','Breaking','Canopy','Chalet','Chirp','Daybreak',
-  'Departure','Dollop','Journey','Kettle','Little_bird','Mercury',
-  'Milky_way','Quad','Radial','Reflection','Scavenger','Seedling',
-  'Shelter','Sprinkles','Steps','Storytime','Tease','Unfold'
-];
-const MP3_FOLDER = '/local/wekker-standaard/';
+const MEDIA_SOURCE_ROOT = 'media-source://media_source/local';
 const LABEL_SPEAKER = 'music_assistant';
 const LABEL_LIGHT   = 'verlichting_wekker';
 
@@ -236,13 +230,29 @@ class AlarmCard extends HTMLElement {
 
   // ── Audio ──────────────────────────────────────────────
 
-  _playAudio(filename,btn){
+  _playAudio(url,btn){
     this._stopAudio();
-    this._audio=new Audio(`${window.location.origin}${MP3_FOLDER}${filename}.mp3`);
-    this._audio._file=filename;
+    this._audio=new Audio(url);
+    this._audio._url=url;
     this._audio.play().catch(e=>console.warn('[alarm-card] audio:',e));
     if(btn){btn.textContent='Stoppen';btn.classList.add('playing');}
     this._audio.addEventListener('ended',()=>{if(btn){btn.textContent='Luisteren';btn.classList.remove('playing');}this._audio=null;});
+  }
+
+  async _resolveMediaUrl(mediaContentId){
+    try{
+      const r=await this._hass.connection.sendMessagePromise({type:'media_source/resolve_media',media_content_id:mediaContentId});
+      return r?.url||null;
+    }catch(e){console.error('[alarm-card] resolve_media:',e);return null;}
+  }
+
+  async _browseMediaSource(contentId=null){
+    try{
+      const msg={type:'media_source/browse_media'};
+      if(contentId)msg.media_content_id=contentId;
+      else msg.media_content_id=MEDIA_SOURCE_ROOT;
+      return await this._hass.connection.sendMessagePromise(msg);
+    }catch(e){console.error('[alarm-card] browse_media_source:',e);return null;}
   }
   _stopAudio(){if(this._audio){this._audio.pause();this._audio.currentTime=0;this._audio=null;}}
 
@@ -274,7 +284,7 @@ class AlarmCard extends HTMLElement {
       dayStr=days.map(d=>{const r=(alarm.d[String(d)]?.r??1)!==0;return DAYS_NL[d]+(r?'↻':'·');}).join(' ');
     }
     const firstDay=alarm.d[String(days[0])];
-    const sound=firstDay?.media_title||(typeof firstDay?.s==='number'&&firstDay.s>=0&&firstDay.s<MP3_FILES.length?MP3_FILES[firstDay.s].replace(/_/g,' '):null);
+    const sound=firstDay?.media_title||null;
     // Lamp: toon naam van eerste dag die lamp aan heeft
     const lampDay=days.find(d=>typeof alarm.d[String(d)]?.b==='number'&&alarm.d[String(d)]?.l);
     const lamp=lampDay!==undefined?alarm.d[String(lampDay)]?.l:null;
@@ -605,11 +615,15 @@ class AlarmCard extends HTMLElement {
       el.addEventListener('click',()=>{if(fired){fired=false;return;}fn();});
     };
 
-    const handleListen=btn=>{
-      const isPlaying=this._audio&&!this._audio.paused&&this._audio._file===btn.dataset.file;
+    const handleListen=async btn=>{
+      const isPlaying=this._audio&&!this._audio.paused&&this._audio._url===btn.dataset.url;
       modal.querySelectorAll('.btn-listen').forEach(b=>{b.textContent='Luisteren';b.classList.remove('playing');});
-      if(isPlaying)this._stopAudio();
-      else this._playAudio(btn.dataset.file,btn);
+      if(isPlaying){this._stopAudio();return;}
+      btn.textContent='…';btn.disabled=true;
+      const url=await this._resolveMediaUrl(btn.dataset.url);
+      btn.disabled=false;
+      if(url)this._playAudio(url,btn);
+      else{btn.textContent='Luisteren';console.warn('[alarm-card] geen URL voor',btn.dataset.url);}
     };
 
     const expanded=new Set();
@@ -618,8 +632,8 @@ class AlarmCard extends HTMLElement {
     const genDayBody=i=>{
       const key=String(i);
       const day=this._temp.d[key]||{};
-      const hasSnd=!!(day.media_title||(typeof day.s==='number'&&day.s>=0&&day.s<MP3_FILES.length));
-      const sndName=day.media_title||(typeof day.s==='number'&&day.s>=0&&day.s<MP3_FILES.length?MP3_FILES[day.s].replace(/_/g,' '):null);
+      const hasSnd=!!day.media_title;
+      const sndName=day.media_title||null;
       const lampOn=typeof day.b==='number';
       const vol=day.v??50;
       const bri=day.b??80;
@@ -647,15 +661,10 @@ class AlarmCard extends HTMLElement {
             <button class="stab"        data-tab="bld" data-day="${i}">Bladeren</button>
           </div>
           <div data-tabcontent="std-${i}">
-            <div class="mp3-list">
-              ${MP3_FILES.map((name,idx)=>`
-                <div class="mp3i${day.s===idx?' sel':''}" data-dayidx="${i}" data-idx="${idx}">
-                  <span>${name.replace(/_/g,' ')}</span>
-                  <div class="mp3-right">
-                    <button class="btn-listen" data-file="${name}">Luisteren</button>
-                    ${day.s===idx?'<ha-icon icon="mdi:check" style="--mdc-icon-size:15px;color:var(--primary-color)"></ha-icon>':''}
-                  </div>
-                </div>`).join('')}
+            <div class="mp3-list" id="std-list-${i}">
+              <div class="mbr-loading" style="display:flex;justify-content:center;padding:20px">
+                <ha-icon icon="mdi:loading" style="animation:spin 1s linear infinite;--mdc-icon-size:28px;color:var(--primary-color)"></ha-icon>
+              </div>
             </div>
           </div>
           <div data-tabcontent="bld-${i}" style="display:none;padding:8px 0">
@@ -760,37 +769,71 @@ class AlarmCard extends HTMLElement {
           tab.classList.add('active');
           block.querySelector(`[data-tabcontent="std-${i}"]`).style.display=tab.dataset.tab==='std'?'block':'none';
           block.querySelector(`[data-tabcontent="bld-${i}"]`).style.display=tab.dataset.tab==='bld'?'block':'none';
+          if(tab.dataset.tab==='std')renderStdList();
         });
       });
 
-      // MP3 select
-      block.querySelectorAll('.mp3i').forEach(item=>{
-        tap(item,()=>{
-          const idx=parseInt(item.dataset.idx);
-          day.s=idx;delete day.url;delete day.media_type;delete day.media_title;
-          block.querySelectorAll('.mp3i').forEach(it=>{
-            const sel=parseInt(it.dataset.idx)===idx;
-            it.classList.toggle('sel',sel);
-            const right=it.querySelector('.mp3-right');
-            const chk=right.querySelector('ha-icon');
-            if(sel&&!chk){const ic=document.createElement('ha-icon');ic.setAttribute('icon','mdi:check');ic.style.cssText='--mdc-icon-size:15px;color:var(--primary-color)';right.appendChild(ic);}
-            else if(!sel&&chk)chk.remove();
-          });
-          const nameEl=sndRow.querySelector('.snd-btn-name');
-          const nameStr=MP3_FILES[idx].replace(/_/g,' ');
-          if(nameEl){nameEl.textContent=nameStr;nameEl.classList.add('sel');}
-          const sum=block.querySelector('.day-blk-sum');
-          if(sum){sum.textContent=nameStr;sum.style.color='var(--primary-color)';}
-          sndPanel.style.display='none';sndArr.style.transform='';
+      // Standard tab — browse media source and render list
+      const renderStdList=async(navId=null)=>{
+        const listEl=block.querySelector(`#std-list-${i}`);
+        if(!listEl)return;
+        listEl.innerHTML=`<div class="mbr-loading" style="display:flex;justify-content:center;padding:20px"><ha-icon icon="mdi:loading" style="animation:spin 1s linear infinite;--mdc-icon-size:28px;color:var(--primary-color)"></ha-icon></div>`;
+        const result=await this._browseMediaSource(navId);
+        if(!result||!result.children?.length){
+          listEl.innerHTML=`<div class="mbr-empty">Geen bestanden gevonden</div>`;
+          return;
+        }
+        const items=result.children;
+        listEl.innerHTML=items.map((item,idx)=>{
+          const isFolder=item.can_expand&&!item.can_play;
+          const isSel=day.url===item.media_content_id;
+          return `<div class="mp3i${isSel?' sel':''}" data-stdidx="${idx}" data-cid="${item.media_content_id}" data-title="${(item.title||'').replace(/"/g,'&quot;')}" data-folder="${isFolder?1:0}">
+            <span>${item.title||item.media_content_id}</span>
+            <div class="mp3-right">
+              ${!isFolder?`<button class="btn-listen" data-url="${item.media_content_id}">Luisteren</button>`:''}
+              ${isSel?'<ha-icon icon="mdi:check" style="--mdc-icon-size:15px;color:var(--primary-color)"></ha-icon>':''}
+              ${isFolder?'<ha-icon icon="mdi:chevron-right" style="--mdc-icon-size:16px;color:var(--secondary-text-color);display:flex"></ha-icon>':''}
+            </div>
+          </div>`;
+        }).join('');
+        listEl.querySelectorAll('.mp3i').forEach(item=>{
+          let _sy=0,_sf=false;
+          item.addEventListener('touchstart',e=>{_sy=e.touches[0].clientY;_sf=false;},{passive:true});
+          item.addEventListener('touchend',e=>{
+            if(Math.abs(e.changedTouches[0].clientY-_sy)>8)return;
+            e.preventDefault();_sf=true;handleStdItem(item);
+          },{passive:false});
+          item.addEventListener('click',()=>{if(_sf){_sf=false;return;}handleStdItem(item);});
         });
-      });
-
-      // Listen buttons
-      block.querySelectorAll('.btn-listen').forEach(btn=>{
-        let ly=0,lf=false;
-        btn.addEventListener('touchstart',e=>{e.stopPropagation();ly=e.touches[0].clientY;lf=false;},{passive:true});
-        btn.addEventListener('touchend',e=>{e.stopPropagation();if(Math.abs(e.changedTouches[0].clientY-ly)>8)return;e.preventDefault();lf=true;handleListen(btn);},{passive:false});
-        btn.addEventListener('click',e=>{e.stopPropagation();if(lf){lf=false;return;}handleListen(btn);});
+        listEl.querySelectorAll('.btn-listen').forEach(btn=>{
+          let ly=0,lf=false;
+          btn.addEventListener('touchstart',e=>{e.stopPropagation();ly=e.touches[0].clientY;lf=false;},{passive:true});
+          btn.addEventListener('touchend',e=>{e.stopPropagation();if(Math.abs(e.changedTouches[0].clientY-ly)>8)return;e.preventDefault();lf=true;handleListen(btn);},{passive:false});
+          btn.addEventListener('click',e=>{e.stopPropagation();if(lf){lf=false;return;}handleListen(btn);});
+        });
+      };
+      const handleStdItem=item=>{
+        if(item.dataset.folder==='1'){renderStdList(item.dataset.cid);return;}
+        const cid=item.dataset.cid,title=item.dataset.title;
+        day.url=cid;day.media_type='music';day.media_title=title;
+        delete day.s;
+        block.querySelectorAll('.mp3i').forEach(it=>{
+          const sel=it.dataset.cid===cid;
+          it.classList.toggle('sel',sel);
+          const right=it.querySelector('.mp3-right');
+          const chk=right.querySelector('ha-icon[icon="mdi:check"]');
+          if(sel&&!chk){const ic=document.createElement('ha-icon');ic.setAttribute('icon','mdi:check');ic.style.cssText='--mdc-icon-size:15px;color:var(--primary-color)';right.appendChild(ic);}
+          else if(!sel&&chk)chk.remove();
+        });
+        const nameEl=sndRow.querySelector('.snd-btn-name');
+        if(nameEl){nameEl.textContent=title;nameEl.classList.add('sel');}
+        const sum=block.querySelector('.day-blk-sum');
+        if(sum){sum.textContent=title;sum.style.color='var(--primary-color)';}
+        sndPanel.style.display='none';sndArr.style.transform='';
+      };
+      // Load std list when standard tab is shown
+      block.querySelectorAll('.stab').forEach(tab=>{
+        if(tab.dataset.tab==='std'&&tab.classList.contains('active'))renderStdList();
       });
 
       // Media browser
@@ -999,10 +1042,9 @@ class AlarmCard extends HTMLElement {
         modal.querySelectorAll('[data-testspk]').forEach(b=>{b.dataset.on='0';b.textContent='🔊 Speaker testen';b.classList.remove('active');});
         if(this._testSpkEntity){this._hass.callService('media_player','media_stop',{entity_id:this._testSpkEntity});this._testSpkEntity=null;}
         if(isOn)return;
-        const url=typeof day.s==='number'&&day.s>=0&&day.s<MP3_FILES.length?`${window.location.origin}${MP3_FOLDER}${MP3_FILES[day.s]}.mp3`:null;
+        const url=day.url||null;
         this._hass.callService('media_player','volume_set',{entity_id:day.mp,volume_level:(day.v??50)/100});
-        if(url)this._hass.callService('media_player','play_media',{entity_id:day.mp,media_content_id:url,media_content_type:'music'});
-        else if(day.url)this._hass.callService('media_player','play_media',{entity_id:day.mp,media_content_id:day.url,media_content_type:day.media_type||'music'});
+        if(url)this._hass.callService('media_player','play_media',{entity_id:day.mp,media_content_id:url,media_content_type:day.media_type||'music'});
         else this._hass.callService('media_player','media_play',{entity_id:day.mp});
         this._testSpkEntity=day.mp;
         testSpkBtn.dataset.on='1';testSpkBtn.textContent='⏹ Stoppen';testSpkBtn.classList.add('active');
@@ -1031,13 +1073,13 @@ class AlarmCard extends HTMLElement {
         const key=String(i);
         const isOpen=expanded.has(i);
         const day=this._temp.d[key]||{};
-        const sndName=day.media_title||(typeof day.s==='number'&&day.s>=0&&day.s<MP3_FILES.length?MP3_FILES[day.s].replace(/_/g,' '):'—');
+        const sndName=day.media_title||'—';
         return `
           <div class="day-block" data-day="${i}">
             <div class="day-blk-hdr">
               <span class="day-blk-lbl">${DAYS_NL[i]}</span>
               <input type="time" class="dt-time" data-day="${i}" value="${day.t||'07:00'}">
-              <span class="day-blk-sum" style="color:${(typeof day.s==='number'&&day.s>=0)||day.url?'var(--primary-color)':'var(--secondary-text-color)'}">${sndName}</span>
+              <span class="day-blk-sum" style="color:${day.url?'var(--primary-color)':'var(--secondary-text-color)'}">${sndName}</span>
               <ha-icon class="day-blk-arr" icon="mdi:chevron-${isOpen?'up':'down'}" style="--mdc-icon-size:18px;color:var(--secondary-text-color);display:flex;flex-shrink:0;transition:transform .2s"></ha-icon>
             </div>
             <div class="day-blk-body" style="display:${isOpen?'block':'none'}">
