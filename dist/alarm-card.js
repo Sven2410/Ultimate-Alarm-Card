@@ -26,12 +26,11 @@
  * Light label filter   : "verlichting_wekker"
  */
 
-const VERSION   = '1.3.0';
+const VERSION   = '1.4.0';
 const DAYS_SHORT= ['Mon','Tue','Wed','Thu','Fri','Sat','Sun'];
 const DAYS_NL   = ['Ma','Di','Wo','Do','Vr','Za','Zo'];
 const DAYS_FULL = ['Maandag','Dinsdag','Woensdag','Donderdag','Vrijdag','Zaterdag','Zondag'];
 const MAX_ALARMS = 10;
-const MEDIA_SOURCE_ROOT = 'media-source://media_source/local';
 const LABEL_SPEAKER = 'music_assistant';
 const LABEL_LIGHT   = 'verlichting_wekker';
 
@@ -230,30 +229,6 @@ class AlarmCard extends HTMLElement {
 
   // ── Audio ──────────────────────────────────────────────
 
-  _playAudio(url,btn){
-    this._stopAudio();
-    this._audio=new Audio(url);
-    this._audio._url=url;
-    this._audio.play().catch(e=>console.warn('[alarm-card] audio:',e));
-    if(btn){btn.textContent='Stoppen';btn.classList.add('playing');}
-    this._audio.addEventListener('ended',()=>{if(btn){btn.textContent='Luisteren';btn.classList.remove('playing');}this._audio=null;});
-  }
-
-  async _resolveMediaUrl(mediaContentId){
-    try{
-      const r=await this._hass.connection.sendMessagePromise({type:'media_source/resolve_media',media_content_id:mediaContentId});
-      return r?.url||null;
-    }catch(e){console.error('[alarm-card] resolve_media:',e);return null;}
-  }
-
-  async _browseMediaSource(contentId=null){
-    try{
-      const msg={type:'media_source/browse_media'};
-      if(contentId)msg.media_content_id=contentId;
-      else msg.media_content_id=MEDIA_SOURCE_ROOT;
-      return await this._hass.connection.sendMessagePromise(msg);
-    }catch(e){console.error('[alarm-card] browse_media_source:',e);return null;}
-  }
   _stopAudio(){if(this._audio){this._audio.pause();this._audio.currentTime=0;this._audio=null;}}
 
   // ── Ticker ─────────────────────────────────────────────
@@ -510,16 +485,7 @@ class AlarmCard extends HTMLElement {
         .snd-btn-name.sel{color:var(--primary-color)}
         .snd-arr{--mdc-icon-size:16px;color:var(--secondary-text-color);display:flex;flex-shrink:0;transition:transform .2s}
         .snd-panel{margin-top:6px;border:1px solid var(--divider-color,#ebebeb);border-radius:8px;overflow:hidden}
-        .tab-row{display:flex;gap:6px;padding:8px 8px 0}
-        .stab{flex:1;padding:6px;border-radius:8px;font-size:12px;font-weight:500;cursor:pointer;touch-action:manipulation;border:1.5px solid var(--divider-color,#ddd);background:none;color:var(--secondary-text-color);-webkit-tap-highlight-color:transparent;font-family:inherit;transition:all .15s}
-        .stab.active{background:var(--primary-color);border-color:var(--primary-color);color:#fff}
-        .mp3-list{max-height:160px;overflow-y:auto;-webkit-overflow-scrolling:touch;overscroll-behavior:contain;margin:6px 0 0}
-        .mp3i{display:flex;align-items:center;justify-content:space-between;padding:7px 10px;font-size:13px;border-bottom:1px solid var(--divider-color,#f0f0f0);cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
-        .mp3i:last-child{border-bottom:none}
-        .mp3i.sel{background:rgba(var(--rgb-primary-color,3,169,244),.08);color:var(--primary-color);font-weight:600}
-        .mp3-right{display:flex;align-items:center;gap:8px}
-        .btn-listen{padding:4px 10px;border:1px solid var(--primary-color);border-radius:6px;background:none;font-size:11px;color:var(--primary-color);cursor:pointer;touch-action:manipulation;white-space:nowrap;-webkit-tap-highlight-color:transparent;font-family:inherit;transition:all .15s}
-        .btn-listen.playing{background:var(--primary-color);color:#fff}
+        
         /* Sliders */
         .vol-row,.bri-row{display:flex;align-items:center;gap:10px;padding:4px 0;margin-top:6px}
         .vol-row ha-icon,.bri-row ha-icon{--mdc-icon-size:16px;color:var(--secondary-text-color);display:flex;flex-shrink:0}
@@ -615,17 +581,6 @@ class AlarmCard extends HTMLElement {
       el.addEventListener('click',()=>{if(fired){fired=false;return;}fn();});
     };
 
-    const handleListen=async btn=>{
-      const isPlaying=this._audio&&!this._audio.paused&&this._audio._url===btn.dataset.url;
-      modal.querySelectorAll('.btn-listen').forEach(b=>{b.textContent='Luisteren';b.classList.remove('playing');});
-      if(isPlaying){this._stopAudio();return;}
-      btn.textContent='…';btn.disabled=true;
-      const url=await this._resolveMediaUrl(btn.dataset.url);
-      btn.disabled=false;
-      if(url)this._playAudio(url,btn);
-      else{btn.textContent='Luisteren';console.warn('[alarm-card] geen URL voor',btn.dataset.url);}
-    };
-
     const expanded=new Set();
 
     // ── genDayBody ─────────────────────────────────────────────────
@@ -650,36 +605,15 @@ class AlarmCard extends HTMLElement {
 
         <!-- Sound -->
         <div class="dblbl" style="margin-top:12px">Wekkergeluid</div>
-        <div class="snd-btn-row" data-sndrow="${i}">
-          <ha-icon icon="mdi:music-note" style="--mdc-icon-size:14px;color:${hasSnd?'var(--primary-color)':'var(--secondary-text-color)'};display:flex;flex-shrink:0"></ha-icon>
-          <span class="snd-btn-name${hasSnd?' sel':''}">${sndName||'Geluid kiezen'}</span>
-          <ha-icon class="snd-arr" icon="mdi:chevron-down" style="--mdc-icon-size:16px;color:var(--secondary-text-color);display:flex;flex-shrink:0;transition:transform .2s"></ha-icon>
+        <div style="display:flex;align-items:center;gap:6px">
+          <div class="snd-btn-row" data-sndrow="${i}" style="flex:1">
+            <ha-icon icon="mdi:music-note" style="--mdc-icon-size:14px;color:${hasSnd?'var(--primary-color)':'var(--secondary-text-color)'};display:flex;flex-shrink:0"></ha-icon>
+            <span class="snd-btn-name${hasSnd?' sel':''}">${sndName||'Geluid kiezen'}</span>
+            <ha-icon icon="mdi:chevron-right" style="--mdc-icon-size:16px;color:var(--secondary-text-color);display:flex;flex-shrink:0"></ha-icon>
+          </div>
+          <button data-sndclear="${i}" style="display:${hasSnd?'flex':'none'};border:none;background:none;color:var(--secondary-text-color);cursor:pointer;font-size:15px;padding:4px 8px;touch-action:manipulation;-webkit-tap-highlight-color:transparent;flex-shrink:0;align-items:center">✕</button>
         </div>
-        <div class="snd-panel" style="display:none" data-sndpanel="${i}">
-          <div class="tab-row">
-            <button class="stab active" data-tab="std" data-day="${i}">Standaard</button>
-            <button class="stab"        data-tab="bld" data-day="${i}">Bladeren</button>
-          </div>
-          <div data-tabcontent="std-${i}">
-            <div class="mp3-list" id="std-list-${i}">
-              <div class="mbr-loading" style="display:flex;justify-content:center;padding:20px">
-                <ha-icon icon="mdi:loading" style="animation:spin 1s linear infinite;--mdc-icon-size:28px;color:var(--primary-color)"></ha-icon>
-              </div>
-            </div>
-          </div>
-          <div data-tabcontent="bld-${i}" style="display:none;padding:8px 0">
-            <div id="bld-selected-${i}" style="display:${day.url?'flex':'none'};align-items:center;gap:8px;padding:8px 10px;background:rgba(var(--rgb-primary-color,3,169,244),.08);border-radius:8px;margin-bottom:8px">
-              <ha-icon icon="mdi:check-circle" style="--mdc-icon-size:16px;color:var(--primary-color);display:flex;flex-shrink:0"></ha-icon>
-              <span id="bld-title-${i}" style="flex:1;font-size:13px;font-weight:500;color:var(--primary-color);overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${day.media_title||day.url||'Geselecteerd'}</span>
-              <button id="bld-clear-${i}" style="border:none;background:none;color:var(--secondary-text-color);cursor:pointer;font-size:11px;padding:2px 6px;touch-action:manipulation">✕</button>
-            </div>
-            <button id="bld-open-${i}" style="width:100%;padding:10px;border:1.5px dashed var(--divider-color,#ddd);border-radius:8px;background:none;font-size:13px;color:var(--secondary-text-color);cursor:pointer;touch-action:manipulation;-webkit-tap-highlight-color:transparent;font-family:inherit;display:flex;align-items:center;justify-content:center;gap:8px">
-              <ha-icon icon="mdi:plus" style="--mdc-icon-size:18px;display:flex"></ha-icon>
-              <span>Media kiezen</span>
-            </button>
-            <p id="bld-no-spk-${i}" style="display:none;font-size:12px;color:var(--error-color,#f44336);margin-top:6px;text-align:center">⚠️ Selecteer eerst een speaker</p>
-          </div>
-        </div>
+        <p id="bld-no-spk-${i}" style="display:none;font-size:12px;color:var(--error-color,#f44336);margin-top:6px;text-align:center">⚠️ Selecteer eerst een speaker</p>
 
         <!-- Lamp -->
         <div class="lamp-hdr-row" data-lamptoggle="${i}">
@@ -752,88 +686,19 @@ class AlarmCard extends HTMLElement {
         if(isOpen)expanded.delete(i);else expanded.add(i);
       });
 
-      // Sound panel
+      // Sound — klik direct opent Music Assistant browser
       const sndRow=block.querySelector(`[data-sndrow="${i}"]`);
-      const sndPanel=block.querySelector(`[data-sndpanel="${i}"]`);
-      const sndArr=sndRow.querySelector('.snd-arr');
-      tap(sndRow,()=>{
-        const op=sndPanel.style.display!=='none';
-        sndPanel.style.display=op?'none':'block';
-        sndArr.style.transform=op?'':'rotate(180deg)';
-      });
-
-      // Tabs
-      block.querySelectorAll('.stab').forEach(tab=>{
-        tap(tab,()=>{
-          block.querySelectorAll('.stab').forEach(t=>t.classList.remove('active'));
-          tab.classList.add('active');
-          block.querySelector(`[data-tabcontent="std-${i}"]`).style.display=tab.dataset.tab==='std'?'block':'none';
-          block.querySelector(`[data-tabcontent="bld-${i}"]`).style.display=tab.dataset.tab==='bld'?'block':'none';
-          if(tab.dataset.tab==='std')renderStdList();
-        });
-      });
-
-      // Standard tab — browse media source and render list
-      const renderStdList=async(navId=null)=>{
-        const listEl=block.querySelector(`#std-list-${i}`);
-        if(!listEl)return;
-        listEl.innerHTML=`<div class="mbr-loading" style="display:flex;justify-content:center;padding:20px"><ha-icon icon="mdi:loading" style="animation:spin 1s linear infinite;--mdc-icon-size:28px;color:var(--primary-color)"></ha-icon></div>`;
-        const result=await this._browseMediaSource(navId);
-        if(!result||!result.children?.length){
-          listEl.innerHTML=`<div class="mbr-empty">Geen bestanden gevonden</div>`;
-          return;
-        }
-        const items=result.children;
-        listEl.innerHTML=items.map((item,idx)=>{
-          const isFolder=item.can_expand&&!item.can_play;
-          const isSel=day.url===item.media_content_id;
-          return `<div class="mp3i${isSel?' sel':''}" data-stdidx="${idx}" data-cid="${item.media_content_id}" data-title="${(item.title||'').replace(/"/g,'&quot;')}" data-folder="${isFolder?1:0}">
-            <span>${item.title||item.media_content_id}</span>
-            <div class="mp3-right">
-              ${!isFolder?`<button class="btn-listen" data-url="${item.media_content_id}">Luisteren</button>`:''}
-              ${isSel?'<ha-icon icon="mdi:check" style="--mdc-icon-size:15px;color:var(--primary-color)"></ha-icon>':''}
-              ${isFolder?'<ha-icon icon="mdi:chevron-right" style="--mdc-icon-size:16px;color:var(--secondary-text-color);display:flex"></ha-icon>':''}
-            </div>
-          </div>`;
-        }).join('');
-        listEl.querySelectorAll('.mp3i').forEach(item=>{
-          let _sy=0,_sf=false;
-          item.addEventListener('touchstart',e=>{_sy=e.touches[0].clientY;_sf=false;},{passive:true});
-          item.addEventListener('touchend',e=>{
-            if(Math.abs(e.changedTouches[0].clientY-_sy)>8)return;
-            e.preventDefault();_sf=true;handleStdItem(item);
-          },{passive:false});
-          item.addEventListener('click',()=>{if(_sf){_sf=false;return;}handleStdItem(item);});
-        });
-        listEl.querySelectorAll('.btn-listen').forEach(btn=>{
-          let ly=0,lf=false;
-          btn.addEventListener('touchstart',e=>{e.stopPropagation();ly=e.touches[0].clientY;lf=false;},{passive:true});
-          btn.addEventListener('touchend',e=>{e.stopPropagation();if(Math.abs(e.changedTouches[0].clientY-ly)>8)return;e.preventDefault();lf=true;handleListen(btn);},{passive:false});
-          btn.addEventListener('click',e=>{e.stopPropagation();if(lf){lf=false;return;}handleListen(btn);});
-        });
-      };
-      const handleStdItem=item=>{
-        if(item.dataset.folder==='1'){renderStdList(item.dataset.cid);return;}
-        const cid=item.dataset.cid,title=item.dataset.title;
-        day.url=cid;day.media_type='music';day.media_title=title;
-        delete day.s;
-        block.querySelectorAll('.mp3i').forEach(it=>{
-          const sel=it.dataset.cid===cid;
-          it.classList.toggle('sel',sel);
-          const right=it.querySelector('.mp3-right');
-          const chk=right.querySelector('ha-icon[icon="mdi:check"]');
-          if(sel&&!chk){const ic=document.createElement('ha-icon');ic.setAttribute('icon','mdi:check');ic.style.cssText='--mdc-icon-size:15px;color:var(--primary-color)';right.appendChild(ic);}
-          else if(!sel&&chk)chk.remove();
-        });
+      tap(sndRow,()=>openMediaBrowser());
+      tap(block.querySelector(`[data-sndclear="${i}"]`),()=>{
+        delete day.url;delete day.media_type;delete day.media_title;
         const nameEl=sndRow.querySelector('.snd-btn-name');
-        if(nameEl){nameEl.textContent=title;nameEl.classList.add('sel');}
+        const iconEl=sndRow.querySelector('ha-icon');
         const sum=block.querySelector('.day-blk-sum');
-        if(sum){sum.textContent=title;sum.style.color='var(--primary-color)';}
-        sndPanel.style.display='none';sndArr.style.transform='';
-      };
-      // Load std list when standard tab is shown
-      block.querySelectorAll('.stab').forEach(tab=>{
-        if(tab.dataset.tab==='std'&&tab.classList.contains('active'))renderStdList();
+        const clearBtn=block.querySelector(`[data-sndclear="${i}"]`);
+        if(nameEl){nameEl.textContent='Geluid kiezen';nameEl.classList.remove('sel');}
+        if(iconEl)iconEl.style.color='var(--secondary-text-color)';
+        if(sum){sum.textContent='—';sum.style.color='var(--secondary-text-color)';}
+        if(clearBtn)clearBtn.style.display='none';
       });
 
       // Media browser
@@ -896,15 +761,14 @@ class AlarmCard extends HTMLElement {
           day.media_title=item.title||item.media_content_id;
           delete day.s;
           const nameEl=sndRow.querySelector('.snd-btn-name');
-          if(nameEl){nameEl.textContent=day.media_title;nameEl.classList.add('sel');}
+          const iconEl=sndRow.querySelector('ha-icon');
           const sum=block.querySelector('.day-blk-sum');
+          const clearBtn=block.querySelector(`[data-sndclear="${i}"]`);
+          if(nameEl){nameEl.textContent=day.media_title;nameEl.classList.add('sel');}
+          if(iconEl)iconEl.style.color='var(--primary-color)';
           if(sum){sum.textContent=day.media_title;sum.style.color='var(--primary-color)';}
-          const selBox=block.querySelector(`#bld-selected-${i}`);
-          const titleEl=block.querySelector(`#bld-title-${i}`);
-          if(selBox)selBox.style.display='flex';
-          if(titleEl)titleEl.textContent=day.media_title;
+          if(clearBtn)clearBtn.style.display='flex';
           overlay.remove();
-          sndPanel.style.display='none';sndArr.style.transform='';
         }
       };
       const openMediaBrowser=async()=>{
@@ -956,23 +820,6 @@ class AlarmCard extends HTMLElement {
         if(result)renderBrowserList(overlay,result);
         else overlay.querySelector('.mbr-list').innerHTML=`<div class="mbr-empty">Could not load media</div>`;
       };
-
-      const bldOpenBtn=block.querySelector(`#bld-open-${i}`);
-      if(bldOpenBtn){
-        let bly=0,blf=false;
-        bldOpenBtn.addEventListener('touchstart',e=>{e.stopPropagation();bly=e.touches[0].clientY;blf=false;},{passive:true});
-        bldOpenBtn.addEventListener('touchend',e=>{e.stopPropagation();if(Math.abs(e.changedTouches[0].clientY-bly)>8)return;e.preventDefault();blf=true;openMediaBrowser();},{passive:false});
-        bldOpenBtn.addEventListener('click',e=>{e.stopPropagation();if(blf){blf=false;return;}openMediaBrowser();});
-      }
-      tap(block.querySelector(`#bld-clear-${i}`),()=>{
-        delete day.url;delete day.media_type;delete day.media_title;
-        const selBox=block.querySelector(`#bld-selected-${i}`);
-        const nameEl=sndRow.querySelector('.snd-btn-name');
-        const sum=block.querySelector('.day-blk-sum');
-        if(selBox)selBox.style.display='none';
-        if(nameEl){nameEl.textContent='Geluid kiezen';nameEl.classList.remove('sel');}
-        if(sum){sum.textContent='—';sum.style.color='var(--secondary-text-color)';}
-      });
 
       // Speaker dropdown
       buildSearchSelect({
